@@ -22,16 +22,38 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Log in to GitHub Container Registry
+      # 1. Determine Registry and Image Name dynamically
+      - name: Prepare Registry Environment
+        id: prep
+        run: |
+          # Check if running on GitHub or Gitea
+          if [[ "${{ github.server_url }}" == *"github.com"* ]]; then
+            echo "Running on GitHub"
+            echo "REGISTRY=ghcr.io" >> $GITHUB_ENV
+          else
+            echo "Running on Gitea"
+            # Strip 'https://' and trailing slashes from the server URL to get the hostname
+            # e.g., https://gitea.my-server.com/ -> gitea.my-server.com
+            CLEAN_HOST=$(echo "${{ github.server_url }}" | sed -e 's|^[^/]*//||' -e 's|/.*$||')
+            echo "REGISTRY=$CLEAN_HOST" >> $GITHUB_ENV
+          fi
+
+          # Docker images must be lowercase. GitHub/Gitea repos might contain uppercase.
+          IMAGE_NAME=$(echo "${{ github.repository }}" | tr '[:upper:]' '[:lower:]')
+          echo "IMAGE_NAME=$IMAGE_NAME" >> $GITHUB_ENV
+
+      # 2. Login using the dynamic REGISTRY variable
+      - name: Log in to Container Registry
         uses: docker/login-action@v3
         with:
-          registry: ghcr.io
+          registry: ${{ env.REGISTRY }}
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
+      # 3. Push using dynamic tags
       - name: Build and push multi-arch Docker image
         uses: docker/build-push-action@v5
         with:
@@ -39,7 +61,7 @@ jobs:
           push: true
           platforms: linux/amd64,linux/arm64
           tags: |
-            ghcr.io/${{ github.repository }}:latest
-            ghcr.io/${{ github.repository }}:${{ github.sha }}
+            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest
+            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ github.sha }}
           cache-from: type=gha
           cache-to: type=gha,mode=max

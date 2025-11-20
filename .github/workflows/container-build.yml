@@ -11,6 +11,11 @@ on:
       - 'requirements.txt'
       - 'docker-compose.yml'
 
+env:
+  # This works for both GitHub and Gitea
+  REGISTRY: ${{ github.server_url == 'https://github.com' && 'ghcr.io' || format('{0}/v2', github.server_url) }}
+  IMAGE_NAME: ${{ github.repository }}
+
 jobs:
   build-and-push:
     runs-on: ubuntu-latest
@@ -22,22 +27,8 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Prepare Registry Environment
-        id: prep
-        run: |
-          # 1. Dynamic Registry Detection
-          # This reads the Gitea ROOT_URL automatically.
-          if [[ "${{ github.server_url }}" == *"github.com"* ]]; then
-            echo "REGISTRY=ghcr.io" >> $GITHUB_ENV
-          else
-            # Strips 'https://' and path to get 'gitea.service.dc1.fbleagh.duckdns.org'
-            CLEAN_HOST=$(echo "${{ github.server_url }}" | sed -e 's|^[^/]*//||' -e 's|/.*$||')
-            echo "REGISTRY=$CLEAN_HOST" >> $GITHUB_ENV
-          fi
-
-          # 2. Lowercase Image Name
-          IMAGE_NAME=$(echo "${{ github.repository }}" | tr '[:upper:]' '[:lower:]')
-          echo "IMAGE_NAME=$IMAGE_NAME" >> $GITHUB_ENV
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v3
 
       - name: Log in to Container Registry
         uses: docker/login-action@v3
@@ -48,8 +39,6 @@ jobs:
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
-        # NOTE: "http = true" block removed because you are now on SSL.
-        # If your certificate is valid, you don't need any config here.
 
       - name: Build and push multi-arch Docker image
         uses: docker/build-push-action@v5

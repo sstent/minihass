@@ -13,7 +13,7 @@ on:
 
 env:
   # This works for both GitHub and Gitea
-  REGISTRY: ${{ github.server_url == 'https://github.com' && 'ghcr.io' || github.server_url }}
+  REGISTRY: ${{ github.server_url == 'https://github.com' && 'ghcr.io' || replace(github.server_url, 'https://', '') }}
   IMAGE_NAME: ${{ github.repository }}
 
 jobs:

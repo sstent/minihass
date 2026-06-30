@@ -265,12 +265,13 @@ def control_tplink(action):
 def tv_pair_start(tv_id):
     ip = config.get(f'tv_{tv_id}_ip')
     if not ip: return jsonify({'error': 'TV IP not configured'}), 400
-    try:
-        loop = asyncio.new_event_loop()
-        asyncio.set_event_loop(loop)
+    
+    async def _run():
         tv = AndroidTVManager(tv_id, ip)
-        loop.run_until_complete(tv.start_pairing())
-        loop.close()
+        await tv.start_pairing()
+        
+    try:
+        asyncio.run(_run())
         return jsonify({'status': 'success'})
     except Exception as e:
         return jsonify({'error': str(e)}), 500
@@ -281,12 +282,13 @@ def tv_pair_finish(tv_id):
     code = request.get_json().get('code')
     if not ip: return jsonify({'error': 'TV IP not configured'}), 400
     if not code: return jsonify({'error': 'Pairing code required'}), 400
-    try:
-        loop = asyncio.new_event_loop()
-        asyncio.set_event_loop(loop)
+    
+    async def _run():
         tv = AndroidTVManager(tv_id, ip)
-        loop.run_until_complete(tv.finish_pairing(code))
-        loop.close()
+        await tv.finish_pairing(code)
+        
+    try:
+        asyncio.run(_run())
         return jsonify({'status': 'success'})
     except Exception as e:
         return jsonify({'error': str(e)}), 500
@@ -296,19 +298,16 @@ def tv_action(tv_id):
     ip = config.get(f'tv_{tv_id}_ip')
     action = request.get_json().get('action')
     if not ip: return jsonify({'error': 'TV IP not configured'}), 400
-    try:
-        loop = asyncio.new_event_loop()
-        asyncio.set_event_loop(loop)
-        
+    
+    async def _run():
         tv = AndroidTVManager(tv_id, ip)
-        
         if not tv.cert or not tv.key:
-            loop.close()
             return jsonify({'error': 'needs_pairing'}), 401
-            
-        loop.run_until_complete(tv.execute_macro(action))
-        loop.close()
+        await tv.execute_macro(action)
         return jsonify({'status': 'success'})
+        
+    try:
+        return asyncio.run(_run())
     except InvalidAuth:
         return jsonify({'error': 'needs_pairing'}), 401
     except CannotConnect:

@@ -150,8 +150,8 @@ class AndroidTVManager:
             with open(self.cert_file, 'w') as f: f.write(self.cert)
             with open(self.key_file, 'w') as f: f.write(self.key)
         else:
-            with open(self.cert_file, 'w') as f: f.write("")
-            with open(self.key_file, 'w') as f: f.write("")
+            if os.path.exists(self.cert_file): os.remove(self.cert_file)
+            if os.path.exists(self.key_file): os.remove(self.key_file)
             
         self.client = AndroidTVRemote(
             client_name="MiniHass",
@@ -182,7 +182,12 @@ class AndroidTVManager:
                 await asyncio.sleep(0.1)
                 self.client.send_key_command("MUTE")
             elif macro == 'power_on':
-                self.client.send_key_command("DPAD_CENTER")
+                if self.tv_id in ['bedroom', 'dining']:
+                    self.client.send_key_command("MUTE")
+                    await asyncio.sleep(0.1)
+                    self.client.send_key_command("MUTE")
+                else:
+                    self.client.send_key_command("DPAD_CENTER")
             await asyncio.sleep(0.5) # Flush buffer
         finally:
             self.client.disconnect()

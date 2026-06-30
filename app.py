@@ -293,6 +293,10 @@ def tv_action(tv_id):
     if not ip: return jsonify({'error': 'TV IP not configured'}), 400
     try:
         tv = AndroidTVManager(tv_id, ip)
+        
+        if not tv.cert or not tv.key:
+            return jsonify({'error': 'needs_pairing'}), 401
+            
         loop = asyncio.new_event_loop()
         asyncio.set_event_loop(loop)
         loop.run_until_complete(tv.execute_macro(action))
@@ -300,7 +304,14 @@ def tv_action(tv_id):
         return jsonify({'status': 'success'})
     except InvalidAuth:
         return jsonify({'error': 'needs_pairing'}), 401
+    except CannotConnect:
+        logger.warning(f"Could not connect to {tv_id} TV. It might be off or unreachable.")
+        return jsonify({'error': 'TV is unreachable or turned off'}), 503
+    except ConnectionClosed:
+        logger.warning(f"Connection closed by {tv_id} TV.")
+        return jsonify({'error': 'Connection dropped by TV'}), 503
     except Exception as e:
+        logger.exception(f"Unexpected error in tv_action for {tv_id}")
         return jsonify({'error': str(e)}), 500
 
 

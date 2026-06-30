@@ -25,7 +25,7 @@ job "minihass" {
       driver = "docker"
 
       config {
-        image = "ghcr.io/sstent/minihass:650aad05c80d3a6c03a2c4851a18e245f2e69aef"
+        image = "ghcr.io/sstent/minihass:d801c3f2341e2e41adcbb78c4de85a93e1755bbd"
         ports = ["http"]
       }
 

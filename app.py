@@ -256,7 +256,9 @@ def control_tplink(action):
             if result and 'system' in result:
                 state = result['system']['get_sysinfo']['relay_state'] == 1
                 update_device_state('tplink', state)
-                return jsonify({'status': 'success', 'state': state})
+                return jsonify({'status': 'success', 'state': state, 'reachable': True})
+            else:
+                return jsonify({'status': 'success', 'state': False, 'reachable': False})
         return jsonify({'error': 'Command failed'}), 500
     except Exception as e:
         return jsonify({'error': str(e)}), 500

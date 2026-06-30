@@ -261,9 +261,9 @@ def tv_pair_start(tv_id):
     ip = config.get(f'tv_{tv_id}_ip')
     if not ip: return jsonify({'error': 'TV IP not configured'}), 400
     try:
-        tv = AndroidTVManager(tv_id, ip)
         loop = asyncio.new_event_loop()
         asyncio.set_event_loop(loop)
+        tv = AndroidTVManager(tv_id, ip)
         loop.run_until_complete(tv.start_pairing())
         loop.close()
         return jsonify({'status': 'success'})
@@ -277,9 +277,9 @@ def tv_pair_finish(tv_id):
     if not ip: return jsonify({'error': 'TV IP not configured'}), 400
     if not code: return jsonify({'error': 'Pairing code required'}), 400
     try:
-        tv = AndroidTVManager(tv_id, ip)
         loop = asyncio.new_event_loop()
         asyncio.set_event_loop(loop)
+        tv = AndroidTVManager(tv_id, ip)
         loop.run_until_complete(tv.finish_pairing(code))
         loop.close()
         return jsonify({'status': 'success'})
@@ -292,13 +292,15 @@ def tv_action(tv_id):
     action = request.get_json().get('action')
     if not ip: return jsonify({'error': 'TV IP not configured'}), 400
     try:
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+        
         tv = AndroidTVManager(tv_id, ip)
         
         if not tv.cert or not tv.key:
+            loop.close()
             return jsonify({'error': 'needs_pairing'}), 401
             
-        loop = asyncio.new_event_loop()
-        asyncio.set_event_loop(loop)
         loop.run_until_complete(tv.execute_macro(action))
         loop.close()
         return jsonify({'status': 'success'})

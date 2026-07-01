@@ -180,9 +180,11 @@ class AndroidTVManager:
         
     async def save_certs(self):
         with open(self.cert_file, 'r') as f:
-            consul_config.put(f'{self.consul_prefix}cert', f.read())
+            self.cert = f.read()
+            consul_config.put(f'{self.consul_prefix}cert', self.cert)
         with open(self.key_file, 'r') as f:
-            consul_config.put(f'{self.consul_prefix}key', f.read())
+            self.key = f.read()
+            consul_config.put(f'{self.consul_prefix}key', self.key)
 
     async def start_pairing(self):
         await self.client.async_generate_cert_if_missing()

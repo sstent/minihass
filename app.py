@@ -15,6 +15,23 @@ from threading import Lock
 import time
 import os
 import sys
+import threading
+
+class BackgroundRunner:
+    def __init__(self):
+        self.loop = asyncio.new_event_loop()
+        self.thread = threading.Thread(target=self._run_loop, daemon=True)
+        self.thread.start()
+        
+    def _run_loop(self):
+        asyncio.set_event_loop(self.loop)
+        self.loop.run_forever()
+
+    def run_coro(self, coro):
+        future = asyncio.run_coroutine_threadsafe(coro, self.loop)
+        return future.result()
+
+bg_runner = BackgroundRunner()
 
 from androidtvremote2 import AndroidTVRemote, CannotConnect, ConnectionClosed, InvalidAuth
 
@@ -134,7 +151,7 @@ class TPLinkDevice:
 class AndroidTVManager:
     """Manage Android TV and handle pairing"""
     
-    def __init__(self, tv_id, ip):
+    def __init__(self, tv_id, ip, loop=None):
         self.tv_id = tv_id
         self.ip = ip
         self.consul_prefix = f'tv_credentials/{tv_id}/'
@@ -157,7 +174,8 @@ class AndroidTVManager:
             client_name="MiniHass",
             certfile=self.cert_file,
             keyfile=self.key_file,
-            host=self.ip
+            host=self.ip,
+            loop=loop
         )
         
     async def save_certs(self):
@@ -175,22 +193,23 @@ class AndroidTVManager:
         await self.client.async_finish_pairing(code)
         
     async def execute_macro(self, macro):
-        await self.client.async_connect()
-        try:
-            if macro == 'audio_only':
+        if not self.client._remote_message_protocol:
+            try:
+                await self.client.async_connect()
+            except CannotConnect:
+                raise
+        if macro == 'audio_only':
+            self.client.send_key_command("MUTE")
+            await asyncio.sleep(0.1)
+            self.client.send_key_command("MUTE")
+        elif macro == 'power_on':
+            if self.tv_id in ['bedroom', 'dining']:
                 self.client.send_key_command("MUTE")
                 await asyncio.sleep(0.1)
                 self.client.send_key_command("MUTE")
-            elif macro == 'power_on':
-                if self.tv_id in ['bedroom', 'dining']:
-                    self.client.send_key_command("MUTE")
-                    await asyncio.sleep(0.1)
-                    self.client.send_key_command("MUTE")
-                else:
-                    self.client.send_key_command("DPAD_CENTER")
-            await asyncio.sleep(0.5) # Flush buffer
-        finally:
-            self.client.disconnect()
+            else:
+                self.client.send_key_command("DPAD_CENTER")
+        await asyncio.sleep(0.1) # Flush buffer
 
 
 def update_device_state(device, state):
@@ -263,17 +282,36 @@ def control_tplink(action):
     except Exception as e:
         return jsonify({'error': str(e)}), 500
 
+tv_managers = {}
+tv_timers = {}
+
+async def _disconnect_timer(tv_id):
+    await asyncio.sleep(120)
+    if tv_id in tv_managers:
+        logger.info(f"Disconnecting {tv_id} after 120s of inactivity")
+        try:
+            tv_managers[tv_id].client.disconnect()
+        except:
+            pass
+        del tv_managers[tv_id]
+
+def get_tv_manager(tv_id, ip):
+    if tv_id not in tv_managers:
+        tv_managers[tv_id] = AndroidTVManager(tv_id, ip, loop=bg_runner.loop)
+    return tv_managers[tv_id]
+
+def reset_tv_timer(tv_id):
+    if tv_id in tv_timers:
+        tv_timers[tv_id].cancel()
+    tv_timers[tv_id] = asyncio.run_coroutine_threadsafe(_disconnect_timer(tv_id), bg_runner.loop)
+
 @app.route('/api/tv/<tv_id>/pair/start', methods=['POST'])
 def tv_pair_start(tv_id):
     ip = config.get(f'tv_{tv_id}_ip')
     if not ip: return jsonify({'error': 'TV IP not configured'}), 400
-    
-    async def _run():
-        tv = AndroidTVManager(tv_id, ip)
-        await tv.start_pairing()
-        
+    tv = get_tv_manager(tv_id, ip)
     try:
-        asyncio.run(_run())
+        bg_runner.run_coro(tv.start_pairing())
         return jsonify({'status': 'success'})
     except Exception as e:
         return jsonify({'error': str(e)}), 500
@@ -284,13 +322,9 @@ def tv_pair_finish(tv_id):
     code = request.get_json().get('code')
     if not ip: return jsonify({'error': 'TV IP not configured'}), 400
     if not code: return jsonify({'error': 'Pairing code required'}), 400
-    
-    async def _run():
-        tv = AndroidTVManager(tv_id, ip)
-        await tv.finish_pairing(code)
-        
+    tv = get_tv_manager(tv_id, ip)
     try:
-        asyncio.run(_run())
+        bg_runner.run_coro(tv.finish_pairing(code))
         return jsonify({'status': 'success'})
     except Exception as e:
         return jsonify({'error': str(e)}), 500
@@ -300,16 +334,15 @@ def tv_action(tv_id):
     ip = config.get(f'tv_{tv_id}_ip')
     action = request.get_json().get('action')
     if not ip: return jsonify({'error': 'TV IP not configured'}), 400
+    tv = get_tv_manager(tv_id, ip)
     
-    async def _run():
-        tv = AndroidTVManager(tv_id, ip)
-        if not tv.cert or not tv.key:
-            return jsonify({'error': 'needs_pairing'}), 401
-        await tv.execute_macro(action)
-        return jsonify({'status': 'success'})
+    if not tv.cert or not tv.key:
+        return jsonify({'error': 'needs_pairing'}), 401
         
     try:
-        return asyncio.run(_run())
+        bg_runner.run_coro(tv.execute_macro(action))
+        reset_tv_timer(tv_id)
+        return jsonify({'status': 'success'})
     except InvalidAuth:
         return jsonify({'error': 'needs_pairing'}), 401
     except CannotConnect:
